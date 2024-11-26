@@ -1,0 +1,1 @@
+Basic linux script that enables shebang, updates and upgrades repo's in Ubuntu, then installs LTSP along with CUPS and sets the server as a print server, then creates a user named "Basic" and grants them all permissions within the sudo group to run all applications.
