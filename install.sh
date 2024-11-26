@@ -15,8 +15,8 @@ apt install -y ltsp epoptes nfs-kernel-server isc-dhcp-server
 echo "Installing CUPS..."
 apt install -y cups
 
-# Create a new user called "TRMNL" and add to admin and sudo groups
-USERNAME="TRMNL"
+# Create a new user called "Basic" and add to admin and sudo groups
+USERNAME="Basic"
 echo "Creating user $USERNAME..."
 adduser --disabled-password --gecos "" $USERNAME
 usermod -aG sudo $USERNAME
