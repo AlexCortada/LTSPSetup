@@ -2,14 +2,17 @@
 
 # Exit immediately if a command exits with a non-zero status
 set -e
+# Install the Personal Package Archive, recommended by the LTSP.org documentation
+add-apt-repository ppa:ltsp
+apt update
 
-# Update and upgrade the system
+# Update and upgrade the system; refreshes repo to inlcude ppa
 echo "Updating system..."
 apt update && apt upgrade -y
 
 # Install LTSP and its dependencies
 echo "Installing LTSP and required dependencies..."
-apt install -y ltsp epoptes nfs-kernel-server isc-dhcp-server
+apt install --install-recommends ltsp ltsp-binaries dnsmasq nfs-kernel-server openssh-server squashfs-tools ethtool net-tools
 
 # Install CUPS for printer management
 echo "Installing CUPS..."
@@ -54,3 +57,41 @@ ltsp init --yes
 
 # Inform the user the setup is complete
 echo "Setup complete! LTSP, CUPS, and user $USERNAME are configured."
+
+# Configure dnsmasq in proxy mode so that it can tell the clients where to find the boot image. This is also good if you still want to use the router for DHCP leases, but the router does not support PXE boot
+
+# Define variables
+LTSP_SERVER_IP="192.168.1.1"  # Replace with your LTSP server's IP address
+DNSMASQ_CONFIG="/etc/dnsmasq.conf"
+
+# Backup the existing dnsmasq configuration file
+if [ -f "$DNSMASQ_CONFIG" ]; then
+    cp "$DNSMASQ_CONFIG" "${DNSMASQ_CONFIG}.backup.$(date +%Y%m%d%H%M%S)"
+fi
+
+# Write the dnsmasq configuration for proxy DHCP mode
+cat <<EOF > "$DNSMASQ_CONFIG"
+
+# Disable DNS functionality (proxy mode only)
+port=0
+
+# Proxy DHCP range (proxy mode tells clients to use the router's DHCP for IPs)
+dhcp-range=192.168.1.0,proxy
+
+# PXE boot service configuration
+pxe-service=x86PC, "LTSP Boot", ltsp/pxelinux.0, $LTSP_SERVER_IP
+
+# Specify the bootloader file
+dhcp-boot=ltsp/pxelinux.0
+
+# Specify the TFTP root directory
+tftp-root=/var/lib/tftpboot
+EOF
+
+# Restart the dnsmasq service to apply the changes
+systemctl restart dnsmasq
+
+# Enable dnsmasq to start automatically on boot
+systemctl enable dnsmasq
+
+echo "dnsmasq has been configured in proxy DHCP mode and restarted."
