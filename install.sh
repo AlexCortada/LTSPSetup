@@ -12,7 +12,7 @@ apt update && apt upgrade -y
 
 # Install LTSP and its dependencies
 echo "Installing LTSP and required dependencies..."
-apt install --install-recommends ltsp ltsp-binaries dnsmasq nfs-kernel-server openssh-server squashfs-tools ethtool net-tools
+apt install --install-recommends ltsp ipxe dnsmasq nfs-kernel-server openssh-server squashfs-tools ethtool net-tools
 
 # Install CUPS for printer management
 echo "Installing CUPS..."
@@ -21,7 +21,7 @@ apt install -y cups
 # Create a new user called "Basic" and add to admin and sudo groups
 USERNAME="Basic"
 echo "Creating user $USERNAME..."
-adduser --disabled-password --gecos "" $USERNAME
+adduser --disabled-password --gecos --allow-bad-names "" $USERNAME
 usermod -aG sudo $USERNAME
 
 # Allow the user to run all applications without password prompt
