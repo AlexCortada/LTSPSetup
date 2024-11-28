@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Exit immediately if a command exits with a non-zero status
-set -e
+set -u  # Treat unset variables as an error
+trap 'echo "Error occurred at $LINENO"; exit 1' ERR  # Custom error handling
+
 # Install the Personal Package Archive, recommended by the LTSP.org documentation
 add-apt-repository ppa:ltsp
-apt update
 
 # Update and upgrade the system; refreshes repo to inlcude ppa
 echo "Updating system..."
@@ -23,7 +23,6 @@ USERNAME="Basic"
 echo "Creating user $USERNAME..."
 adduser --disabled-password --gecos "" $USERNAME
 usermod -aG sudo $USERNAME
-usermod -aG admin $USERNAME
 
 # Allow the user to run all applications without password prompt
 echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME
@@ -36,8 +35,14 @@ sed -i '/<\/Location>/i Allow @LOCAL' /etc/cups/cupsd.conf
 sed -i 's/Browsing Off/Browsing On/' /etc/cups/cupsd.conf
 sed -i '/DefaultAuthType Basic/d' /etc/cups/cupsd.conf
 
-# Restart CUPS service to apply changes
-systemctl restart cups
+# Validates and restarts the CUPS configuration
+if ! cupsd -t; then
+    echo "CUPS configuration syntax error detected. Restoring backup..."
+    cp /etc/cups/cupsd.conf.backup /etc/cups/cupsd.conf
+    systemctl restart cups
+    exit 1
+fi
+
 
 # Share printers connected to the CUPS server
 echo "Setting up printer sharing for CUPS..."
@@ -46,10 +51,14 @@ cupsctl --remote-admin
 cupsctl --remote-any
 systemctl restart cups
 
-# Disable any existing DHCP server configuration
-echo "Disabling DHCP server configuration..."
-systemctl stop isc-dhcp-server
-systemctl disable isc-dhcp-server
+#Looks for an existing isc-dhcp server service, if so stops and disables it, if not, continues
+if systemctl list-unit-files | grep -q isc-dhcp-server; then
+    systemctl stop isc-dhcp-server
+    systemctl disable isc-dhcp-server
+else
+    echo "isc-dhcp-server not found, skipping..."
+fi
+
 
 # LTSP-specific configuration
 echo "Configuring LTSP..."
@@ -60,8 +69,15 @@ echo "Setup complete! LTSP, CUPS, and user $USERNAME are configured."
 
 # Configure dnsmasq in proxy mode so that it can tell the clients where to find the boot image. This is also good if you still want to use the router for DHCP leases, but the router does not support PXE boot
 
+# Ensures the correct permissions for the dnsmasq.conf file before writing the new info
+if [ ! -w "$(dirname "$DNSMASQ_CONFIG")" ]; then
+    echo "Cannot write to $(dirname "$DNSMASQ_CONFIG"). Please check permissions."
+    exit 1
+fi
+
 # Define variables
-LTSP_SERVER_IP="192.168.1.1"  # Replace with your LTSP server's IP address
+LTSP_SERVER_IP=$(hostname -I | awk '{print $1}')  # Automatically detect server IP
+#LTSP_SERVER_IP="192.168.1.1"  # Replace with your LTSP server's IP address, this hardcodes the ip of the server in the config file
 DNSMASQ_CONFIG="/etc/dnsmasq.conf"
 
 # Backup the existing dnsmasq configuration file
@@ -76,7 +92,7 @@ cat <<EOF > "$DNSMASQ_CONFIG"
 port=0
 
 # Proxy DHCP range (proxy mode tells clients to use the router's DHCP for IPs)
-dhcp-range=192.168.1.0,proxy
+dhcp-range=192.168.1.100,192.168.1.200,proxy
 
 # PXE boot service configuration
 pxe-service=x86PC, "LTSP Boot", ltsp/pxelinux.0, $LTSP_SERVER_IP
@@ -88,10 +104,24 @@ dhcp-boot=ltsp/pxelinux.0
 tftp-root=/var/lib/tftpboot
 EOF
 
+# Validate dnsmasq configuration
+if ! dnsmasq --test; then
+    echo "Error: Invalid dnsmasq configuration. Restoring backup..."
+    cp "${DNSMASQ_CONFIG}.backup" "$DNSMASQ_CONFIG"
+    exit 1
+fi
+
 # Restart the dnsmasq service to apply the changes
 systemctl restart dnsmasq
 
 # Enable dnsmasq to start automatically on boot
 systemctl enable dnsmasq
 
+# Inform the user
 echo "dnsmasq has been configured in proxy DHCP mode and restarted."
+echo "Setup complete!"
+echo "LTSP server IP: $LTSP_SERVER_IP"
+echo "CUPS and user $USERNAME have been configured."
+echo "dnsmasq is set up in proxy DHCP mode."
+
+
